@@ -64,15 +64,7 @@ class Path extends Component
             return $this->_configPath;
         }
 
-        /**
-         * If the config path is set to config/laravel (in a non-laravel project structure)
-         * we need to strip that off so we can get the correct config path.
-         */
-        $configPath = config_path();
-
-        if (str_ends_with($configPath, '/laravel')) {
-            $configPath = Str::beforeLast($configPath, '/laravel');
-        }
+        $configPath = config_path('craft');
 
         if ($configPath === false) {
             throw new Exception('There was a problem getting the config path.');

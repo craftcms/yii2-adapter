@@ -23,6 +23,7 @@ use CraftCms\Cms\Support\Arr;
 use CraftCms\Cms\Support\Env;
 use CraftCms\Cms\Support\Facades\Deprecator;
 use CraftCms\Cms\Support\Facades\I18N;
+use CraftCms\Cms\Support\Facades\ProjectConfig as ProjectConfigFacade;
 use CraftCms\Cms\Support\Str;
 use CraftCms\Yii2Adapter\Console\LegacyCraftCommand;
 use CraftCms\Yii2Adapter\Console\MigrateMigrationTableCommand;
@@ -33,6 +34,7 @@ use Illuminate\Console\Application as ConsoleApplication;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\ServiceProvider;
 use RuntimeException;
@@ -47,6 +49,12 @@ class Yii2ServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        // Move the project config folder if it is in the wrong place
+        $projectConfig = ProjectConfigFacade::getFacadeRoot();
+        if (is_dir(config_path($projectConfig->folderName))) {
+            File::moveDirectory(config_path($projectConfig->folderName), config_path('craft/' . $projectConfig->folderName));
+        }
+
         $this->registerMultiEnvironmentConfigs();
         $this->registerConstants();
         $this->registerMacros();
