@@ -49,12 +49,6 @@ class Yii2ServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        // Move the project config folder if it is in the wrong place
-        $projectConfig = ProjectConfigFacade::getFacadeRoot();
-        if (is_dir(config_path($projectConfig->folderName))) {
-            File::moveDirectory(config_path($projectConfig->folderName), config_path('craft/' . $projectConfig->folderName));
-        }
-
         $this->registerMultiEnvironmentConfigs();
         $this->registerConstants();
         $this->registerMacros();

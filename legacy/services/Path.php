@@ -13,7 +13,6 @@ use CraftCms\Aliases\Aliases;
 use CraftCms\Cms\License\License;
 use CraftCms\Cms\ProjectConfig\ProjectConfig;
 use CraftCms\Cms\Support\Env;
-use CraftCms\Cms\Support\Str;
 use yii\base\Component;
 use yii\base\Exception;
 
