@@ -29,6 +29,7 @@ use CraftCms\Cms\Addresses\Addresses;
  * @replace {twig-method} craft.addresses()
  * @replace {myElement} myAddress
  * @replace {element-class} \craft\elements\Address
+ * @deprecated 6.0.0 use {@see \CraftCms\Cms\Database\Queries\AddressQuery} instead.
  */
 class AddressQuery extends ElementQuery implements NestedElementQueryInterface
 {
