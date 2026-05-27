@@ -14,6 +14,7 @@ use craft\helpers\FileHelper;
 use craft\queue\QueueLogBehavior;
 use CraftCms\Aliases\Aliases;
 use CraftCms\Cms\Cms;
+use CraftCms\Cms\Http\Routing\ActionRoute;
 use CraftCms\Cms\Plugin\Plugins;
 use CraftCms\Cms\Route\DynamicRoute;
 use CraftCms\Cms\Site\Sites;
@@ -225,6 +226,10 @@ class Application extends \yii\web\Application
      */
     public function runAction($route, $params = []): ?BaseResponse
     {
+        if ($route === 'templates/render') {
+            return $this->runTemplateRoute($params);
+        }
+
         try {
             $result = parent::runAction($route, $params);
         } catch (InvalidRouteException $e) {
@@ -266,11 +271,29 @@ class Application extends \yii\web\Application
         }
     }
 
+    private function runTemplateRoute(array $params = []): BaseResponse
+    {
+        $laravelResponse = new DynamicRoute('templates/render', $params + [
+            'publicOnly' => false,
+        ])->handle(request());
+
+        $response = $this->getResponse();
+
+        if ($response instanceof IlluminateBridgeResponse) {
+            return $response->setIlluminateResponse($laravelResponse);
+        }
+
+        $response->data = $laravelResponse->getContent();
+        $response->setStatusCode($laravelResponse->getStatusCode());
+
+        return $response;
+    }
+
     private function runLaravelAction(string $route, array $params = []): ?BaseResponse
     {
-        $actionUri = request()->actionSegmentsToRoute(explode('/', $route));
+        $actionUri = ActionRoute::uriForSegments(explode('/', $route), request()->isCpRequest());
 
-        if ($actionUri === null) {
+        if (empty($actionUri)) {
             return null;
         }
 
