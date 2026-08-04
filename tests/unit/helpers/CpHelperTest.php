@@ -62,7 +62,7 @@ class CpHelperTest extends TestCase
         self::assertStringNotContainsString('thumb', Cp::elementChipHtml($user, ['showThumb' => false]));
 
         // label
-        $labelPattern = '/<craft-element-label id="[^"]+" class="label">/';
+        $labelPattern = '/<craft-truncate id="[^"]+" class="label">/';
         self::assertEquals(1, preg_match($labelPattern, $indexHtml));
         self::assertEquals(0, preg_match($labelPattern, Cp::elementChipHtml($user, ['showLabel' => false])));
 
@@ -103,7 +103,7 @@ class CpHelperTest extends TestCase
         self::assertStringNotContainsString('thumb', Cp::elementHtml($user, showThumb: false));
 
         // label
-        $labelPattern = '/<craft-element-label id="[^"]+" class="label">/';
+        $labelPattern = '/<craft-truncate id="[^"]+" class="label">/';
         self::assertEquals(1, preg_match($labelPattern, $indexHtml));
         self::assertEquals(0, preg_match($labelPattern, Cp::elementHtml($user, showLabel: false)));
 
@@ -182,7 +182,7 @@ class CpHelperTest extends TestCase
             ['<select', 'selectFieldHtml'],
             ['type="text"', 'textFieldHtml'],
             [
-                '<div class="label light" aria-hidden="true">Test unit</div>', 'textFieldHtml', [
+                '<div slot="suffix" class="label light" aria-hidden="true">Test unit</div>', 'textFieldHtml', [
                     'unit' => 'Test unit',
                 ],
             ],
