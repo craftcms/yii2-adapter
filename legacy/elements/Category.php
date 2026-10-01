@@ -19,6 +19,7 @@ use craft\gql\interfaces\elements\Category as CategoryInterface;
 use craft\models\CategoryGroup;
 use craft\records\Category as CategoryRecord;
 use craft\services\ElementSources;
+use CraftCms\Cms\Cp\Enums\Appearance;
 use CraftCms\Cms\Cp\FormFields;
 use CraftCms\Cms\Cp\Html\ElementHtml;
 use CraftCms\Cms\Element\Conditions\Contracts\ElementConditionInterface;
@@ -42,13 +43,13 @@ use CraftCms\Yii2Adapter\Element\Queries\CategoryQuery;
 use CraftCms\Yii2Adapter\Validation\LegacyElementRules;
 use GraphQL\Type\Definition\Type;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Tpetry\QueryExpressions\Language\Alias;
 use yii\base\Exception;
 use yii\base\InvalidConfigException;
 
+use function CraftCms\Cms\craftAuth;
 use function CraftCms\Cms\t;
 
 /**
@@ -518,7 +519,7 @@ class Category extends Element
             ],
         ];
 
-        $user = Auth::user();
+        $user = craftAuth()->user();
 
         $ancestors = $this->getAncestors();
         if ($ancestors instanceof ElementQueryInterface) {
@@ -529,7 +530,7 @@ class Category extends Element
             if ($user?->can('view', $ancestor)) {
                 $crumbs[] = [
                     'html' => app(ElementHtml::class)->elementChipHtml($ancestor, [
-                        'class' => 'chromeless',
+                        'appearance' => Appearance::Plain->value,
                         'hyperlink' => true,
                     ]),
                 ];
