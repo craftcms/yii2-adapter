@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace CraftCms\Yii2Adapter\Form;
+namespace CraftCms\Yii2Adapter\Ui;
 
 use CraftCms\Cms\Condition\Conditions;
 use CraftCms\Cms\Condition\Contracts\ConditionRuleInterface;

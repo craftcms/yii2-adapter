@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace CraftCms\Yii2Adapter\Form\Concerns;
+namespace CraftCms\Yii2Adapter\Ui\Concerns;
 
 use CraftCms\Cms\Cp\FormFields;
 use CraftCms\Cms\Support\Html;
@@ -11,7 +11,7 @@ use CraftCms\Cms\Support\Json;
 /** @phpstan-require-extends \CraftCms\Cms\Condition\BaseTextConditionRule */
 trait LegacyTextConditionRule
 {
-    use LegacyConditionRuleForm;
+    use LegacyConditionRuleUi;
 
     protected function inputHtml(): string
     {

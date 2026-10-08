@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace CraftCms\Yii2Adapter\Form\Concerns;
+namespace CraftCms\Yii2Adapter\Ui\Concerns;
 
 use CraftCms\Cms\Cp\Components\Lightswitch;
 use CraftCms\Cms\Support\Html;
@@ -10,7 +10,7 @@ use CraftCms\Cms\Support\Html;
 /** @phpstan-require-extends \CraftCms\Cms\Condition\BaseLightswitchConditionRule */
 trait LegacyLightswitchConditionRule
 {
-    use LegacyConditionRuleForm;
+    use LegacyConditionRuleUi;
 
     protected function inputHtml(): string
     {

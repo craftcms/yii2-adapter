@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace CraftCms\Yii2Adapter\Form\Contracts;
+namespace CraftCms\Yii2Adapter\Ui\Contracts;
 
 use CraftCms\Cms\Component\Contracts\ConfigurableComponentInterface;
 

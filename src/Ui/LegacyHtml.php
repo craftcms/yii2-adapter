@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace CraftCms\Yii2Adapter\Form;
+namespace CraftCms\Yii2Adapter\Ui;
 
 use CraftCms\Cms\Element\Contracts\ElementInterface;
 use CraftCms\Cms\Field\Contracts\InlineEditableFieldInterface;
@@ -10,10 +10,10 @@ use CraftCms\Cms\Support\Html;
 use CraftCms\Cms\View\HtmlStack;
 use CraftCms\Cms\View\InputNamespace;
 use CraftCms\Yii2Adapter\Field\Contracts\LegacyField;
-use CraftCms\Yii2Adapter\Form\Contracts\LegacySettingsComponent;
-use CraftCms\Yii2Adapter\Form\Controls\LegacyHtmlControl;
-use CraftCms\Yii2Adapter\Form\Enums\LegacyHtmlMode;
-use CraftCms\Yii2Adapter\Form\Nodes\LegacyHtmlField;
+use CraftCms\Yii2Adapter\Ui\Contracts\LegacySettingsComponent;
+use CraftCms\Yii2Adapter\Ui\Controls\LegacyHtmlControl;
+use CraftCms\Yii2Adapter\Ui\Enums\LegacyHtmlMode;
+use CraftCms\Yii2Adapter\Ui\Nodes\LegacyHtmlField;
 use DOMDocument;
 use DOMElement;
 use DOMXPath;

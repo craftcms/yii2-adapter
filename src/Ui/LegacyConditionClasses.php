@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace CraftCms\Yii2Adapter\Form;
+namespace CraftCms\Yii2Adapter\Ui;
 
 /** @internal */
 class LegacyConditionClasses

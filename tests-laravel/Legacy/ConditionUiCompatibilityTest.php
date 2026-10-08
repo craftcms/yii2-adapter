@@ -22,7 +22,7 @@ class LegacyTitleInputRule extends TitleConditionRule
     }
 }
 
-it('captures legacy input overrides in a Form bridge', function() {
+it('captures legacy input overrides in a UI bridge', function() {
     $rule = new LegacyTitleInputRule();
     $rule->condition = new ElementCondition(Entry::class);
 
@@ -116,11 +116,11 @@ it('preserves the submitted input names for legacy rule families', function(stri
     'administrative area' => [\craft\elements\conditions\addresses\AdministrativeAreaConditionRule::class, ['countryCode' => 'US'], ['countryCode', 'values[]']],
 ]);
 
-it('scopes legacy plugin inputs and refreshes through the condition Form', function() {
+it('scopes legacy plugin inputs and refreshes through the condition UI', function() {
     $rule = new LegacyTitleInputRule();
     $rule->condition = new ElementCondition(Entry::class);
     $payload = app(\CraftCms\Cms\Condition\ConditionBuilder::class)->resolveRule($rule);
-    $control = $payload->form->nodes[0]->control;
+    $control = $payload->ui->nodes[0]->control;
 
     expect($control->props['fragment']['html'])->toContain("name=\"_conditionRules[{$rule->uid}][value]\"")
         ->and($control->props['expandValues'])->toBeTrue()

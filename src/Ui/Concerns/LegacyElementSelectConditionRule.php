@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace CraftCms\Yii2Adapter\Form\Concerns;
+namespace CraftCms\Yii2Adapter\Ui\Concerns;
 
 use CraftCms\Cms\Cp\FormFields;
 use CraftCms\Cms\Cp\RequestedSite;
@@ -13,7 +13,7 @@ use function CraftCms\Cms\t;
 /** @phpstan-require-extends \CraftCms\Cms\Condition\BaseElementSelectConditionRule */
 trait LegacyElementSelectConditionRule
 {
-    use LegacyConditionRuleForm;
+    use LegacyConditionRuleUi;
 
     protected function inputHtml(): string
     {
