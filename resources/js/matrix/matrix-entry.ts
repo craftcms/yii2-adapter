@@ -9,7 +9,7 @@
 import {Base, hasAttr} from '@craftcms/garnish';
 import {t} from '@craftcms/ui';
 import {escapeHtml} from '@craftcms/ui/utilities/escapeHtml';
-import type {EntryFieldLayoutFormHost} from '@/modules/forms/entry-field-layout-form-host';
+import type {EntryFieldLayoutUiHost} from '@/modules/ui/entry-field-layout-ui-host';
 import {animationDuration, MatrixInput} from './matrix-input';
 import {blockPreviewParts} from '@/modules/matrix/preview-text';
 import {containerMatrixEntries} from './support';
@@ -20,6 +20,7 @@ import {
   legacyGarnish,
   setJqData,
 } from './interop';
+import {getCpUrl} from '@/common/craft/url';
 
 type JsonValue =
   | string
@@ -75,12 +76,11 @@ export class MatrixEntry extends Base {
     this.previewContainer =
       this.titlebar?.querySelector('[data-matrix-block-preview]') ?? null;
     this.fieldsContainer = blockPart(container, '[data-matrix-block-fields]');
-    const formHost =
-      this.fieldsContainer?.querySelector<EntryFieldLayoutFormHost>(
-        'craft-entry-field-layout-form'
-      );
-    if (formHost) {
-      formHost.requestMetadata = () => ({
+    const uiHost = this.fieldsContainer?.querySelector<EntryFieldLayoutUiHost>(
+      'craft-entry-field-layout-ui'
+    );
+    if (uiHost) {
+      uiHost.requestMetadata = () => ({
         elementType: 'CraftCms\\Cms\\Entry\\Elements\\Entry',
         elementId: null,
         canonicalId: null,
@@ -366,7 +366,10 @@ export class MatrixEntry extends Base {
 
     // Remember that?
     if (!this.isNew) {
-      MatrixInput.rememberCollapsedEntryId(this.id!);
+      MatrixInput.rememberCollapsedEntryId(
+        this.id!,
+        this.matrix.settings!.siteId
+      );
     }
 
     this.setCollapsedInput('1');
@@ -431,7 +434,10 @@ export class MatrixEntry extends Base {
 
     // Remember that?
     if (!this.isNew) {
-      MatrixInput.forgetCollapsedEntryId(this.id!);
+      MatrixInput.forgetCollapsedEntryId(
+        this.id!,
+        this.matrix.settings!.siteId
+      );
     }
 
     this.setCollapsedInput('');
@@ -675,9 +681,7 @@ export class MatrixEntry extends Base {
 
       case 'editEntryType': {
         new Craft.CpScreenSlideout(
-          Craft.getCpUrl(
-            `settings/entry-types/${this.container.dataset.typeId}`
-          )
+          getCpUrl(`settings/entry-types/${this.container.dataset.typeId}`)
         );
         break;
       }

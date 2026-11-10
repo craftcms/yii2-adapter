@@ -15,8 +15,8 @@ use craft\config\GeneralConfig as LegacyGeneralConfig;
 use CraftCms\Cms\Config\BaseConfig;
 use CraftCms\Cms\Config\GeneralConfig as NewGeneralConfig;
 use CraftCms\Cms\Support\Env;
-use CraftCms\Cms\Support\Facades\Deprecator;
 use CraftCms\Cms\Support\Typecast;
+use CraftCms\Yii2Adapter\LooseEnds\LegacyUsage;
 use Illuminate\Support\Facades\Config as ConfigFacade;
 use InvalidArgumentException;
 use RuntimeException;
@@ -112,6 +112,26 @@ class Config extends Component
         return $this->_configSettings[$category];
     }
 
+    /**
+     * Converts a Laravel-side general config to the legacy class.
+     *
+     * A legacy config is already one, so it's just copied: restoring it from
+     * its state would set every property, and the deprecated ones log a
+     * deprecation when they're set, even to their defaults.
+     */
+    private function toLegacyGeneralConfig(mixed $config): mixed
+    {
+        if ($config instanceof LegacyGeneralConfig) {
+            return clone $config;
+        }
+
+        if ($config instanceof NewGeneralConfig) {
+            return LegacyGeneralConfig::__set_state($config->toArray());
+        }
+
+        return $config;
+    }
+
     private function _createConfigObj(string $category, string $filename, BaseConfig|\craft\config\BaseConfig|null $existingConfig): object
     {
         $config = ConfigFacade::get("craft.$filename", []);
@@ -124,9 +144,7 @@ class Config extends Component
             $configClass = LegacyGeneralConfig::class;
             $envPrefix = 'CRAFT_';
 
-            if ($config instanceof NewGeneralConfig) {
-                $config = LegacyGeneralConfig::__set_state($config->toArray());
-            }
+            $config = $this->toLegacyGeneralConfig($config);
         } else {
             switch ($category) {
                 case self::CATEGORY_CUSTOM:
@@ -144,9 +162,7 @@ class Config extends Component
             $config = $config($existingConfig ?? $configClass::create());
         }
 
-        if ($config instanceof NewGeneralConfig) {
-            $config = LegacyGeneralConfig::__set_state($config->toArray());
-        }
+        $config = $this->toLegacyGeneralConfig($config);
 
         // Get any environment value overrides
         $envConfig = Env::config($configClass, $envPrefix);
@@ -246,7 +262,7 @@ class Config extends Component
      */
     public function getGeneral(): LegacyGeneralConfig
     {
-        Deprecator::log('Craft::$app->config->general', 'Craft::$app->config->general is deprecated. Use `CraftCms\Cms\Cms::config()` (PHP) or `app.config.craft.general` (Twig) instead.');
+        LegacyUsage::record('Craft::$app->config->general', 'Craft::$app->config->general is deprecated. Use `CraftCms\Cms\Cms::config()` (PHP) or `app.config.craft.general` (Twig) instead.');
 
         /** @noinspection PhpIncompatibleReturnTypeInspection */
         return $this->getConfigSettings(self::CATEGORY_GENERAL);

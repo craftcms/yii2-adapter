@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace CraftCms\Yii2Adapter\Tests\Legacy;
 
+use craft\fieldlayoutelements\BaseNativeField as LegacyBaseNativeField;
 use craft\fieldlayoutelements\entries\EntryTitleField as LegacyEntryTitleField;
 use craft\fields\Assets;
 use craft\fields\Entries;
@@ -14,36 +15,39 @@ use CraftCms\Cms\Element\Contracts\ElementInterface;
 use CraftCms\Cms\Entry\Data\EntryType;
 use CraftCms\Cms\Entry\Elements\Entry;
 use CraftCms\Cms\FieldLayout\FieldLayout;
+use CraftCms\Cms\FieldLayout\FieldLayoutCompiler;
 use CraftCms\Cms\FieldLayout\FieldLayoutElementContext;
 use CraftCms\Cms\FieldLayout\FieldLayoutTab;
 use CraftCms\Cms\FieldLayout\LayoutElements\Entries\EntryTitleField;
-use CraftCms\Cms\Form\Enums\ControlMode;
-use CraftCms\Cms\Form\Form;
-use CraftCms\Cms\Form\FormContext;
-use CraftCms\Cms\Form\FormResolver;
+use CraftCms\Cms\Site\Data\Site;
 use CraftCms\Cms\Support\Facades\HtmlStack;
 use CraftCms\Cms\Support\Facades\InputNamespace;
 use CraftCms\Cms\Support\Facades\Sites;
 use CraftCms\Cms\Support\Facades\Template;
+use CraftCms\Cms\Ui\Enums\ControlMode;
+use CraftCms\Cms\Ui\Ui;
+use CraftCms\Cms\Ui\UiContext;
+use CraftCms\Cms\Ui\UiHtmlRenderer;
+use CraftCms\Cms\Ui\UiResolver;
 use CraftCms\Cms\View\TemplateMode;
 use Mockery;
 use Symfony\Component\DomCrawler\Crawler;
 
-it('uses each built-in relation settings template through legacy parent hooks', function (string $class, string $template) {
+it('uses each built-in relation settings template through legacy parent hooks', function(string $class, string $template) {
     $field = Mockery::mock($class)->makePartial()->shouldAllowMockingProtectedMethods();
     $condition = Mockery::mock(ElementCondition::class)->makePartial();
     $condition->__construct();
     $condition->shouldReceive('getSelectableConditionRules')->andReturn([]);
     $field->shouldReceive('getSelectionCondition')->andReturn($condition);
-    Template::shouldReceive('renderTemplate')->once()->withArgs(function ($name, $variables) use ($template, $field) {
+    Template::shouldReceive('renderTemplate')->once()->withArgs(function($name, $variables) use ($template, $field) {
         expect($name)->toBe($template)
             ->and($variables['field'])->toBe($field);
 
         return true;
     })->andReturn('<input name="selectionLabel" value="Choose">');
-    $context = new FormContext(namespace: 'settings');
+    $context = new UiContext(namespace: 'settings');
 
-    $payload = app(FormResolver::class)->resolve($field->settingsForm($context), $context);
+    $payload = app(UiResolver::class)->resolve($field->settingsUi($context), $context);
     $control = $payload->nodes[0]->control;
     $html = new Crawler($control->props['fragment']['html']);
 
@@ -56,21 +60,20 @@ it('uses each built-in relation settings template through legacy parent hooks', 
     'users' => [Users::class, '_components/fieldtypes/elementfieldsettings.twig'],
 ]);
 
-it('preserves nullable settings overrides on built-in relation fields', function () {
-    $field = new class extends Entries
-    {
+it('preserves nullable settings overrides on built-in relation fields', function() {
+    $field = new class() extends Entries {
         public function getSettingsHtml(): ?string
         {
             return null;
         }
     };
 
-    $payload = app(FormResolver::class)->resolve($field->settingsForm(), new FormContext);
+    $payload = app(UiResolver::class)->resolve($field->settingsUi(), new UiContext());
 
     expect($payload->nodes)->toBe([]);
 });
 
-it('renders the legacy relation templates with overridable settings HTML', function (string $class) {
+it('renders the legacy relation templates with overridable settings HTML', function(string $class) {
     TemplateMode::set(TemplateMode::Cp);
     Sites::partialMock()->shouldReceive('isMultiSite')->andReturn(false);
     Sites::shouldReceive('getEditableSiteIds')->andReturn(collect());
@@ -90,7 +93,11 @@ it('renders the legacy relation templates with overridable settings HTML', funct
         ->and($html->filter('input[name="selectionLabel"]'))->toHaveCount(1);
 })->with([Entries::class, Assets::class, Users::class]);
 
-it('captures legacy entry title inputs while retaining the core title type', function (bool $multiline) {
+it('captures legacy entry title inputs while retaining the core title type', function(bool $multiline) {
+    Sites::partialMock()->shouldReceive('isMultiSite')->andReturn(false);
+    Sites::shouldReceive('getAllSiteIds')->andReturn(collect([1]));
+    Sites::shouldReceive('getPrimarySite')->andReturn(new Site(['id' => 1, 'language' => 'en']));
+
     $entry = Mockery::mock(Entry::class)->makePartial();
     $entry->title = 'A title';
     $entry->shouldReceive('getType')->andReturn(new EntryType([
@@ -99,9 +106,9 @@ it('captures legacy entry title inputs while retaining the core title type', fun
     ]));
     $entry->shouldReceive('getAttributeStatus')->andReturn(null);
     $field = new LegacyEntryTitleField(['uid' => 'title', 'name' => 'headline']);
-    $context = new FormContext(namespace: ['nested']);
-    $node = $field->formNode(new FieldLayoutElementContext($entry, $context));
-    $payload = app(FormResolver::class)->resolve(Form::make([$node]), $context);
+    $context = new UiContext(namespace: ['nested']);
+    $node = $field->uiNode(new FieldLayoutElementContext($entry, $context));
+    $payload = app(UiResolver::class)->resolve(Ui::make([$node]), $context);
     $html = new Crawler($payload->nodes[0]->control->props['fragment']['html']);
 
     expect($field)->toBeInstanceOf(EntryTitleField::class)
@@ -109,9 +116,11 @@ it('captures legacy entry title inputs while retaining the core title type', fun
         ->and($html->filter($multiline ? 'textarea[name="nested[headline]"]' : 'input[name="nested[headline]"]'))->toHaveCount(1);
 })->with([false, true]);
 
-it('captures plugin title overrides once in every form mode', function (ControlMode $mode) {
-    $field = new class(['uid' => 'title', 'name' => 'headline']) extends LegacyEntryTitleField
-    {
+it('captures plugin title overrides once in every form mode', function(ControlMode $mode) {
+    Sites::partialMock()->shouldReceive('isMultiSite')->andReturn(false);
+    Sites::shouldReceive('getPrimarySite')->andReturn(new Site(['id' => 1, 'language' => 'en']));
+
+    $field = new class(['uid' => 'title', 'name' => 'headline']) extends LegacyEntryTitleField {
         public int $calls = 0;
 
         public function inputHtml(?ElementInterface $element = null, bool $static = false): ?string
@@ -119,12 +128,12 @@ it('captures plugin title overrides once in every form mode', function (ControlM
             $this->calls++;
             HtmlStack::css('.plugin-title { color: red; }');
 
-            return '<input name="headline" data-static="'.($static ? 'true' : 'false').'">';
+            return '<input name="headline" data-static="' . ($static ? 'true' : 'false') . '">';
         }
     };
-    $context = new FormContext(namespace: ['nested'], mode: $mode);
-    $node = $field->formNode(new FieldLayoutElementContext(null, $context));
-    $payload = app(FormResolver::class)->resolve(Form::make([$node]), $context);
+    $context = new UiContext(namespace: ['nested'], mode: $mode);
+    $node = $field->uiNode(new FieldLayoutElementContext(null, $context));
+    $payload = app(UiResolver::class)->resolve(Ui::make([$node]), $context);
     $control = $payload->nodes[0]->control;
     $input = new Crawler($control->props['fragment']['html'])->filter('input');
 
@@ -135,10 +144,10 @@ it('captures plugin title overrides once in every form mode', function (ControlM
         ->and($input->attr('data-static'))->toBe($mode === ControlMode::Editable ? 'false' : 'true');
 })->with(ControlMode::cases());
 
-it('serializes the adapter title class and omits titles disabled by the entry type', function () {
+it('serializes the adapter title class and omits titles disabled by the entry type', function() {
     $field = new LegacyEntryTitleField(['uid' => 'title', 'name' => 'headline', 'required' => false]);
     $layout = FieldLayout::make(Entry::class)
-        ->tab('Content', fn (FieldLayoutTab $tab) => $tab->add($field));
+        ->tab('Content', fn(FieldLayoutTab $tab) => $tab->add($field));
     $entry = Mockery::mock(Entry::class)->makePartial();
     $entry->shouldReceive('getType')->andReturn(new EntryType(['hasTitleField' => false]));
 
@@ -147,22 +156,21 @@ it('serializes the adapter title class and omits titles disabled by the entry ty
         'uid' => 'title',
         'name' => 'headline',
         'required' => false,
-    ])->and($field->formNode(new FieldLayoutElementContext($entry, new FormContext)))->toBeNull();
+    ])->and($field->uiNode(new FieldLayoutElementContext($entry, new UiContext())))->toBeNull();
 });
 
-it('renders the complete legacy Table settings Form with its namespace and effective mode', function (ControlMode $mode) {
-    $field = new class(['columns' => ['col1' => ['heading' => 'Status', 'handle' => 'status', 'type' => 'singleline']], 'defaults' => [['col1' => 'Draft']]]) extends Table
-    {
+it('renders the complete legacy Table settings UI with its namespace and effective mode', function(ControlMode $mode) {
+    $field = new class(['columns' => ['col1' => ['heading' => 'Status', 'handle' => 'status', 'type' => 'singleline']], 'defaults' => [['col1' => 'Draft']]]) extends Table {
         public function getSettingsHtml(): ?string
         {
-            return parent::getSettingsHtml().'<input name="pluginOption" value="Custom">';
+            return parent::getSettingsHtml() . '<input name="pluginOption" value="Custom">';
         }
     };
-    $html = InputNamespace::namespaceInputs(fn () => $mode === ControlMode::Editable
+    $html = InputNamespace::namespaceInputs(fn() => $mode === ControlMode::Editable
         ? $field->getSettingsHtml()
         : $field->getReadOnlySettingsHtml(), 'plugin[settings]');
     $crawler = new Crawler($html);
-    $host = $crawler->filter('craft-field-settings-form');
+    $host = $crawler->filter('craft-field-settings-ui');
     $pluginInput = $crawler->filter('input[name="plugin[settings][pluginOption]"]');
     $payload = json_decode($host->attr('data-payload'), true);
     $columns = $payload['nodes'][0]['control'];
@@ -180,10 +188,74 @@ it('renders the complete legacy Table settings Form with its namespace and effec
         ->and($columns['deltaGroup'])->toBe(['settings', 'columns'])
         ->and($columns['mode'])->toBe($mode->value)
         ->and($defaults['mode'])->toBe($mode->value)
-        ->and($defaults['forms'][0]['nodes'][0]['control']['mode'])->toBe($mode->value);
+        ->and($defaults['uis'][0]['nodes'][0]['control']['mode'])->toBe($mode->value);
 
-    $editablePayload = json_decode(new Crawler($field->getSettingsHtml())->filter('craft-field-settings-form')->attr('data-payload'), true);
+    $editablePayload = json_decode(new Crawler($field->getSettingsHtml())->filter('craft-field-settings-ui')->attr('data-payload'), true);
 
     expect($editablePayload['nodes'][0]['control']['mode'])->toBe(ControlMode::Editable->value);
-
 })->with([ControlMode::Editable, ControlMode::ReadOnly]);
+
+it('renders native fields that only implement inputHtml within core field chrome', function(ControlMode $mode, bool $static) {
+    Sites::partialMock()->shouldReceive('isMultiSite')->andReturn(false);
+    Sites::shouldReceive('getPrimarySite')->andReturn(new Site(['id' => 1, 'language' => 'en']));
+
+    $field = new class(['uid' => 'notes-element']) extends LegacyBaseNativeField {
+        public string $attribute = 'notes';
+
+        protected function defaultLabel(?ElementInterface $element = null, bool $static = false): ?string
+        {
+            return 'Plugin notes';
+        }
+
+        protected function inputHtml(?ElementInterface $element = null, bool $static = false): ?string
+        {
+            HtmlStack::js('window.pluginNotes = true;');
+
+            return '<input name="notes" value="Draft" data-static="' . ($static ? 'true' : 'false') . '">';
+        }
+    };
+    $layout = FieldLayout::make(Entry::class)
+        ->tab('Content', fn(FieldLayoutTab $tab) => $tab->add($field));
+    $layout->getTabs()[0]->uid = 'content-tab';
+
+    $payload = app(FieldLayoutCompiler::class)->compile($layout, context: new UiContext(
+        namespace: ['fields'],
+        mode: $mode,
+        errors: ['notes' => 'Notes are invalid.'],
+    ));
+    $node = $payload->nodes[0]->children[0];
+    $html = new Crawler(app(UiHtmlRenderer::class)->render($payload));
+
+    expect($node->control?->component)->toBe('craft-legacy:html')
+        ->and($node->control?->path)->toBe(['fields', 'notes'])
+        ->and($node->control?->mode)->toBe($mode)
+        ->and($node->control?->props['fragment']['bodyHtml'])->toContain('window.pluginNotes = true;')
+        ->and($html->filter('craft-field')->attr('label'))->toBe('Plugin notes')
+        ->and($html->filter('craft-field input[name="fields[notes]"]')->attr('data-static'))->toBe($static ? 'true' : 'false')
+        ->and($html->filter('craft-field .error-list')->text())->toBe('Notes are invalid.')
+        ->and($payload->values)->toBe(['fields' => ['notes' => ['fields[notes]' => 'Draft']]]);
+})->with([
+    'editable' => [ControlMode::Editable, false],
+    'read-only' => [ControlMode::ReadOnly, true],
+]);
+
+it('renders fields that implement formHtml as they are', function() {
+    $field = new class(['uid' => 'summary-element']) extends LegacyBaseNativeField {
+        public string $attribute = 'summary';
+
+        public function formHtml(?ElementInterface $element = null, bool $static = false): ?string
+        {
+            return '<div data-plugin-summary><input name="summary" value="Plugin"></div>';
+        }
+    };
+    $layout = FieldLayout::make(Entry::class)
+        ->tab('Content', fn(FieldLayoutTab $tab) => $tab->add($field));
+    $layout->getTabs()[0]->uid = 'content-tab';
+
+    $payload = app(FieldLayoutCompiler::class)->compile($layout, context: new UiContext(namespace: ['fields']));
+    $html = new Crawler(app(UiHtmlRenderer::class)->render($payload));
+
+    expect($payload->nodes[0]->children[0]->control?->path)->toBe(['fields', '__legacyFieldLayout', 'summary-element'])
+        ->and($html->filter('[data-plugin-summary] input[name="fields[summary]"]')->attr('value'))->toBe('Plugin')
+        ->and($html->filter('craft-field'))->toHaveCount(0);
+});

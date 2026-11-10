@@ -1,8 +1,11 @@
 import {createApp, h, nextTick, ref} from 'vue';
+import jquery from 'jquery';
 import {afterEach, describe, expect, it, vi} from 'vite-plus/test';
 import {createCpComponentRegistry} from '@/bootstrap/components';
-import FormRenderer from '@/modules/forms/FormRenderer.vue';
-import type {FormPayload} from '@/modules/forms/types';
+import UiRenderer from '@/modules/ui/UiRenderer.vue';
+import {registerUiComponents} from '@/modules/ui/register';
+import {defineTableUiHost} from '@/modules/ui/table-ui-host';
+import type {UiControlPayload, UiPayload} from '@/modules/ui/types';
 
 const apps: Array<ReturnType<typeof createApp>> = [];
 
@@ -12,11 +15,12 @@ afterEach(() => {
   document.body.innerHTML = '';
   delete (window as any).Cp;
   delete (window as any).Craft;
+  delete (window as any).jQuery;
   delete (window as any).legacyOrder;
   vi.restoreAllMocks();
 });
 
-describe('Legacy HTML Form Control', () => {
+describe('Legacy HTML UI Control', () => {
   it('mounts assets in order and expands flat values before mutation', async () => {
     const appendChild = Node.prototype.appendChild;
 
@@ -112,8 +116,8 @@ describe('Legacy HTML Form Control', () => {
       attributes: '',
     },
     {
-      tag: 'craft-entry-field-layout-form',
-      marker: 'data-form-field-name',
+      tag: 'craft-entry-field-layout-ui',
+      marker: 'data-ui-field-name',
       attributes: 'data-field-path="[&quot;fields&quot;,&quot;nested&quot;]"',
     },
   ])(
@@ -207,6 +211,156 @@ describe('Legacy HTML Form Control', () => {
     });
   });
 
+  it('ignores unnamed controls like a native form submission', async () => {
+    // An element select input's search box is a `craft-input` whose native
+    // input has an empty `name`.
+    const {container, form, mutation, submitted} = await mount(
+      {
+        html: '<input type="hidden" name="fields[topics]" value=""><input type="hidden" name="fields[topics][]" value="7"><craft-input><input slot="input" type="text" name="" value="tech"></craft-input>',
+        headHtml: '',
+        bodyHtml: '',
+      },
+      {
+        path: ['fields', 'topics'],
+        values: {
+          fields: {
+            topics: {'fields[topics]': '', 'fields[topics][]': ['7']},
+          },
+        },
+      }
+    );
+    await container.querySelector<HTMLElement & {ready: Promise<void>}>(
+      'craft-legacy-html-control'
+    )!.ready;
+    const search = container.querySelector<HTMLInputElement>('[slot=input]')!;
+    search.dispatchEvent(new InputEvent('input', {bubbles: true}));
+    await nextTick();
+
+    expect(mutation.value).toEqual({});
+
+    form.dispatchEvent(
+      new SubmitEvent('submit', {bubbles: true, cancelable: true})
+    );
+
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(search.value).toBe('tech');
+    expect(submitted.value).toEqual({fields: {topics: ['7']}});
+  });
+
+  it('publishes changes legacy inputs announce through jQuery', async () => {
+    (window as any).jQuery = jquery;
+    const {container, mutation} = await mount(
+      {
+        html: '<div class="elementselect"><input type="hidden" name="fields[keywords]" value=""><ul><li><input type="hidden" name="fields[keywords][]" value="5"></li></ul></div>',
+        headHtml: '',
+        bodyHtml: '',
+      },
+      {
+        path: ['fields', 'keywords'],
+        values: {
+          fields: {
+            keywords: {'fields[keywords]': '', 'fields[keywords][]': '5'},
+          },
+        },
+      }
+    );
+    await container.querySelector<HTMLElement & {ready: Promise<void>}>(
+      'craft-legacy-html-control'
+    )!.ready;
+
+    // Inputs trigger `change` as they initialize, too.
+    jquery(container.querySelector('.elementselect')!).trigger('change');
+    await nextTick();
+    expect(mutation.value).toEqual({});
+
+    // What an element select input does when an element is selected.
+    const list = container.querySelector('ul')!;
+    list.insertAdjacentHTML(
+      'beforeend',
+      '<li><input type="hidden" name="fields[keywords][]" value="6"></li>'
+    );
+    jquery(container.querySelector('.elementselect')!).trigger('change');
+    await nextTick();
+
+    expect(mutation.value).toEqual({fields: {keywords: ['5', '6']}});
+  });
+
+  it('publishes edits legacy scripts make on keydown without an input event', async () => {
+    const {container, mutation} = await mount(
+      {
+        html: '<textarea name="fields[notes]">Hello</textarea>',
+        headHtml: '',
+        bodyHtml: '',
+      },
+      {
+        path: ['fields', 'notes'],
+        values: {fields: {notes: {'fields[notes]': 'Hello'}}},
+      }
+    );
+    await container.querySelector<HTMLElement & {ready: Promise<void>}>(
+      'craft-legacy-html-control'
+    )!.ready;
+    const textarea = container.querySelector('textarea')!;
+
+    // A key that changes nothing, such as an arrow key
+    textarea.dispatchEvent(new KeyboardEvent('keyup', {bubbles: true}));
+    await nextTick();
+    expect(mutation.value).toEqual({});
+
+    // What Behave.js does on Backspace: it sets the value itself
+    textarea.value = 'Hell';
+    textarea.dispatchEvent(new KeyboardEvent('keyup', {bubbles: true}));
+    await nextTick();
+
+    expect(mutation.value).toEqual({fields: {notes: 'Hell'}});
+
+    // The editor resetting the value, as discarding changes does, isn't an edit
+    const control = container.querySelector<HTMLElement & {value: unknown}>(
+      'craft-legacy-html-control'
+    )!;
+    const published = vi.fn();
+    control.addEventListener('change', (event) => {
+      if (event instanceof CustomEvent) published();
+    });
+    control.value = {'fields[notes]': 'Hello'};
+    textarea.dispatchEvent(new KeyboardEvent('keyup', {bubbles: true}));
+    await nextTick();
+
+    expect(textarea.value).toBe('Hello');
+    expect(published).not.toHaveBeenCalled();
+  });
+
+  it('restores list inputs from an already-expanded value', async () => {
+    // After an autosave, the island remounts with the value it last published
+    // (expanded), not the server's flat input names.
+    const {container, form, submitted} = await mount(
+      {
+        html: '<input type="hidden" name="fields[keywords]" value=""><input type="hidden" name="fields[keywords][]" value="5"><input type="hidden" name="fields[keywords][]" value="6">',
+        headHtml: '',
+        bodyHtml: '',
+      },
+      {
+        path: ['fields', 'keywords'],
+        values: {fields: {keywords: ['5', '6']}},
+      }
+    );
+    await container.querySelector<HTMLElement & {ready: Promise<void>}>(
+      'craft-legacy-html-control'
+    )!.ready;
+
+    expect(
+      [...container.querySelectorAll<HTMLInputElement>('input')].map(
+        (input) => input.value
+      )
+    ).toEqual(['', '5', '6']);
+
+    form.dispatchEvent(
+      new SubmitEvent('submit', {bubbles: true, cancelable: true})
+    );
+
+    expect(submitted.value).toEqual({fields: {keywords: ['5', '6']}});
+  });
+
   it('preserves leading-zero keys like PHP', async () => {
     const {container, mutation} = await mount(
       {
@@ -293,7 +447,7 @@ describe('Legacy HTML Form Control', () => {
     });
   });
 
-  it('renders Form errors owned by a legacy input root', async () => {
+  it('renders UI errors owned by a legacy input root', async () => {
     const {container} = await mount(
       {
         html: '<input name="settings[title]" value="Original">',
@@ -307,11 +461,86 @@ describe('Legacy HTML Form Control', () => {
 
     expect(container.querySelector('[aria-invalid="true"]')).not.toBeNull();
     expect(
-      container.querySelector('[data-legacy-form-errors]')?.textContent
+      container.querySelector('[data-legacy-ui-errors]')?.textContent
     ).toContain('Title is invalid.');
   });
 
-  it('refreshes through the shared Form scope protocol', async () => {
+  it('keeps a native table and its focus when a save re-renders it, and settles the edits the save wrote', async () => {
+    const table = (title: string) => {
+      const host = document.createElement('craft-table-ui');
+      host.setAttribute('name', 'fields[rows]');
+      host.dataset.payload = JSON.stringify(tablePayload(title));
+
+      return host.outerHTML;
+    };
+    const registry = createCpComponentRegistry();
+    registerUiComponents(registry);
+    defineTableUiHost(registry);
+    const fragment = {html: table('Alpha'), headHtml: '', bodyHtml: ''};
+    const {container} = await mount(fragment, {
+      values: {__legacy: {'fields[rows][0][title]': 'Alpha'}},
+    });
+    const host = container.querySelector<HTMLElement & {ready: Promise<void>}>(
+      'craft-table-ui'
+    )!;
+    await host.ready;
+    const input = await vi.waitFor(() => {
+      const input = container.querySelector<HTMLInputElement>(
+        'input[name="fields[rows][0][title]"]'
+      );
+      expect(input).not.toBeNull();
+
+      return input!;
+    });
+    const modified = () =>
+      [...host.querySelectorAll<HTMLElement & {status?: string}>('craft-field')]
+        .map((field) => field.getAttribute('status') ?? field.status)
+        .includes('modified');
+
+    input.focus();
+    input.value = 'Edited';
+    input.dispatchEvent(new InputEvent('input', {bubbles: true}));
+    await nextTick();
+    expect(modified()).toBe(true);
+
+    const control = container.querySelector<
+      HTMLElement & {
+        _control: UiControlPayload;
+        control: UiControlPayload;
+        ready: Promise<void>;
+      }
+    >('craft-legacy-html-control')!;
+    control.control = {
+      ...control._control,
+      props: {
+        ...control._control.props,
+        fragment: {...fragment, html: table('Edited')},
+      },
+    };
+    await control.ready;
+    await nextTick();
+
+    expect(input.isConnected).toBe(true);
+    expect(document.activeElement).toBe(input);
+    expect(input.value).toBe('Edited');
+    expect(modified()).toBe(false);
+
+    // Typed away from the saved value and back, then saved: the response
+    // renders the same table again
+    for (const value of ['Other', 'Edited']) {
+      input.value = value;
+      input.dispatchEvent(new InputEvent('input', {bubbles: true}));
+      await nextTick();
+    }
+    expect(modified()).toBe(true);
+
+    control.control = {...control._control};
+    await nextTick();
+
+    expect(modified()).toBe(false);
+  });
+
+  it('refreshes through the shared UI scope protocol', async () => {
     vi.useFakeTimers();
     const refresh = vi.fn();
     const {container} = await mount(
@@ -358,6 +587,65 @@ describe('Legacy HTML Form Control', () => {
   });
 });
 
+function tablePayload(title: string): UiPayload {
+  const field = (path: string[]) => ({
+    type: 'CraftCms\\Cms\\Ui\\Nodes\\Field',
+    component: 'craft:field',
+    props: {label: 'Title'},
+    control: {
+      type: 'CraftCms\\Cms\\Ui\\Controls\\Text',
+      component: 'craft:text',
+      props: {},
+      path,
+      mode: 'editable' as const,
+      deltaGroup: ['rows'],
+    },
+  });
+
+  return {
+    scope: [],
+    refreshable: false,
+    values: {rows: [{title}]},
+    errors: [],
+    globalErrors: [],
+    nodes: [
+      {
+        type: 'CraftCms\\Cms\\Ui\\Nodes\\Field',
+        component: 'craft:field',
+        props: {label: 'Rows'},
+        control: {
+          type: 'CraftCms\\Cms\\Ui\\Controls\\Table',
+          component: 'craft:table',
+          nestsUis: true,
+          path: ['rows'],
+          deltaGroup: ['rows'],
+          mode: 'editable',
+          props: {
+            columns: {title: {type: 'singleline', heading: 'Title'}},
+            allowAdd: false,
+            allowDelete: false,
+            allowReorder: false,
+            keyed: false,
+            defaultValues: {title: ''},
+            rowTemplate: {
+              scope: [],
+              refreshable: false,
+              nodes: [field(['title'])],
+            },
+          },
+          uis: [
+            {
+              scope: ['rows', '0'],
+              refreshable: false,
+              nodes: [field(['rows', '0', 'title'])],
+            },
+          ],
+        },
+      },
+    ],
+  };
+}
+
 async function mount(
   fragment: {
     html: string;
@@ -366,29 +654,29 @@ async function mount(
   },
   options: {
     refreshable?: boolean;
-    refresh?: (values: FormPayload['values'], scope?: string[]) => void;
+    refresh?: (values: UiPayload['values'], scope?: string[]) => void;
     scope?: string[];
     path?: string[];
     namespace?: string;
-    values?: FormPayload['values'];
-    errors?: FormPayload['errors'];
+    values?: UiPayload['values'];
+    errors?: UiPayload['errors'];
     mode?: 'editable' | 'readOnly' | 'disabled';
   } = {}
 ) {
   const registry = createCpComponentRegistry();
   const mutation = ref<Record<string, unknown>>({});
-  const submitted = ref<FormPayload['values']>();
-  const renderer = ref<{currentValues(): FormPayload['values']}>();
-  const payload: FormPayload = {
+  const submitted = ref<UiPayload['values']>();
+  const renderer = ref<{currentValues(): UiPayload['values']}>();
+  const payload: UiPayload = {
     scope: options.scope ?? [],
     refreshable: options.refreshable ?? false,
     nodes: [
       {
-        type: 'CraftCms\\Yii2Adapter\\Form\\Nodes\\LegacyHtmlField',
+        type: 'CraftCms\\Yii2Adapter\\Ui\\Nodes\\LegacyHtmlField',
         component: 'craft-legacy:html-field',
         props: {},
         control: {
-          type: 'CraftCms\\Yii2Adapter\\Form\\Controls\\LegacyHtmlControl',
+          type: 'CraftCms\\Yii2Adapter\\Ui\\Controls\\LegacyHtmlControl',
           component: 'craft-legacy:html',
           props: {
             fragment,
@@ -420,11 +708,11 @@ async function mount(
   const app = createApp({
     setup() {
       return () =>
-        h(FormRenderer, {
+        h(UiRenderer, {
           ref: renderer,
           payload,
           refresh: options.refresh
-            ? async (values: FormPayload['values'], scope?: string[]) => {
+            ? async (values: UiPayload['values'], scope?: string[]) => {
                 options.refresh!(values, scope);
 
                 return payload;

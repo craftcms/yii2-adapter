@@ -384,7 +384,9 @@ abstract class Model extends \yii\base\Model implements ModelInterface, Validata
             $attrPrefix = rtrim($attrPrefix, '.') . '.';
         }
 
-        foreach ($model->getErrors() as $attribute => $errors) {
+        $modelErrors = $model instanceof \yii\base\Model ? $model->getErrors() : $model->errors()->getMessages();
+
+        foreach ($modelErrors as $attribute => $errors) {
             foreach ($errors as $error) {
                 $this->addError($attrPrefix . $attribute, $error);
             }
@@ -426,7 +428,9 @@ abstract class Model extends \yii\base\Model implements ModelInterface, Validata
 
     public function afterValidate(?\Illuminate\Validation\Validator $validator = null): void
     {
-        // Not implemented
+        if ($validator === null) {
+            parent::afterValidate();
+        }
     }
 
     public function validate($attributeNames = null, $clearErrors = true): bool

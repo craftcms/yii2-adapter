@@ -6,8 +6,8 @@ namespace CraftCms\Yii2Adapter\Mixins;
 
 use Closure;
 use CraftCms\Cms\Element\Contracts\ElementInterface;
-use CraftCms\Cms\Support\Facades\Deprecator;
 use CraftCms\Yii2Adapter\FieldLayout\FieldLayoutForm;
+use CraftCms\Yii2Adapter\LooseEnds\LegacyUsage;
 use InvalidArgumentException;
 
 /**
@@ -39,14 +39,14 @@ class FieldLayoutMixin
     public function createForm(): Closure
     {
         return function(?ElementInterface $element = null, bool $static = false, array $config = []): FieldLayoutForm {
-            Deprecator::log('FieldLayout-createForm', 'Calling ->createForm on a FieldLayout is deprecated. Craft 6 form rendering should be used instead.');
+            LegacyUsage::record('FieldLayout-createForm', 'Calling ->createForm on a FieldLayout is deprecated. Craft 6 UI rendering should be used instead.');
 
             $namespace = $config['namespace'] ?? null;
             unset($config['namespace']);
 
             if ($config !== []) {
                 throw new InvalidArgumentException(sprintf(
-                    'Legacy FieldLayout form configuration [%s] is incompatible with Form rendering.',
+                    'Legacy FieldLayout form configuration [%s] is incompatible with UI rendering.',
                     implode(', ', array_keys($config)),
                 ));
             }

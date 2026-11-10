@@ -10,8 +10,8 @@ import {
   ScreenPropsStoreKey,
   type ScreenPageProps,
 } from '@/common/composables/screen';
-import {registerFormComponents} from '@/modules/forms/register';
-import type {FormPayload} from '@/modules/forms/types';
+import {registerUiComponents} from '@/modules/ui/register';
+import type {UiPayload} from '@/modules/ui/types';
 import EditPage from '@/pages/elements/Edit.vue';
 import './element-editor';
 
@@ -59,53 +59,33 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-it('autosaves and submits custom HTML inputs together with native field edits', async () => {
-  const form: FormPayload = {
-    scope: [],
-    refreshable: false,
-    nodes: [
-      {
-        type: 'CraftCms\\Cms\\Form\\Nodes\\Field',
-        component: 'craft:field',
-        props: {label: 'Body', instructions: null, required: false},
-        control: {
-          type: 'CraftCms\\Cms\\Form\\Controls\\Text',
-          component: 'craft:text',
-          props: {inputType: 'text'},
-          path: ['fields', 'body'],
-          mode: 'editable',
-          deltaGroup: ['fields', 'body'],
-          forms: [],
-        },
-      },
-    ],
-    values: {fields: {body: 'Original body'}},
-    errors: [],
-    globalErrors: [],
-  };
-  const props = {
+/** An entry's edit page props, as the legacy editor screen hands them over. */
+function editorProps(overrides: Record<string, unknown> = {}) {
+  return {
     elementId: 12,
     canonicalId: 12,
     elementType: 'CraftCms\\Cms\\Entry\\Elements\\Entry',
     siteId: 1,
     draftId: null,
     isProvisionalDraft: false,
-    canAutosave: true,
-    form,
-    sidebarForm: null,
+    canAutosave: false,
+    ui: null,
+    sidebarUi: null,
+    metadataHtml: null,
     saveParams: {entryId: 12, siteId: 1},
     saveUrl: '/actions/entries/save-entry',
     applyDraftUrl: '/actions/elements/apply-draft',
     autosaveUrl: '/actions/elements/save-draft',
     activityUrl: null,
     updatedTimestamps: {element: 1, canonical: 1},
+    additionalButtons: [],
     editorActions: {
       primary: {
         label: 'Save',
         actionUrl: null,
         params: {},
         redirect: null,
-        tabId: null,
+        panelId: null,
       },
       menu: [],
       buttons: [],
@@ -113,12 +93,16 @@ it('autosaves and submits custom HTML inputs together with native field edits', 
     actionMenu: [],
     previewTargets: [],
     editorComponent: 'craft-legacy:element-editor',
-    editorContentHtml:
-      '<div data-element-editor-form></div><label>Instructions<input name="fields[instructions]" value="Leave at door"></label><shipping-choice></shipping-choice>',
+    editorContentHtml: null,
+    editorSidebarHtml: null,
+    ...overrides,
   };
+}
+
+function mountEditor(props: ReturnType<typeof editorProps>): void {
+  const screen = createScreenPropsStore();
   app = createApp({
     setup() {
-      const screen = createScreenPropsStore();
       provide(ScreenPagePropsKey, () => props as unknown as ScreenPageProps);
       provide(ScreenPropsStoreKey, screen);
       provideLayoutSlotRegistry();
@@ -134,16 +118,51 @@ it('autosaves and submits custom HTML inputs together with native field edits', 
           [
             h(EditPage, props),
             h('button', {type: 'submit'}, 'Save'),
+            h(LayoutSlotOutlet, {name: 'content-details'}),
+            h(LayoutSlotOutlet, {name: 'footer-meta'}),
             h(LayoutSlotOutlet, {name: 'additional-buttons'}),
           ]
         );
     },
   });
-  registerFormComponents(cpComponentRegistry);
+  registerUiComponents(cpComponentRegistry);
   cpComponentRegistry.install(app);
   container = document.createElement('div');
   document.body.append(container);
   app.mount(container);
+}
+
+it('autosaves and submits custom HTML inputs together with native field edits', async () => {
+  const ui: UiPayload = {
+    scope: [],
+    refreshable: false,
+    nodes: [
+      {
+        type: 'CraftCms\\Cms\\Ui\\Nodes\\Field',
+        component: 'craft:field',
+        props: {label: 'Body', instructions: null, required: false},
+        control: {
+          type: 'CraftCms\\Cms\\Ui\\Controls\\Text',
+          component: 'craft:text',
+          props: {inputType: 'text'},
+          path: ['fields', 'body'],
+          mode: 'editable',
+          deltaGroup: ['fields', 'body'],
+          uis: [],
+        },
+      },
+    ],
+    values: {fields: {body: 'Original body'}},
+    errors: [],
+    globalErrors: [],
+  };
+  const props = editorProps({
+    ui,
+    canAutosave: true,
+    editorContentHtml:
+      '<div data-element-editor-form></div><label>Instructions<input name="fields[instructions]" value="Leave at door"></label><shipping-choice></shipping-choice>',
+  });
+  mountEditor(props);
   await vi.waitFor(() =>
     expect(container.querySelector('input[name="fields[body]"]')).not.toBeNull()
   );
@@ -188,4 +207,32 @@ it('autosaves and submits custom HTML inputs together with native field edits', 
     fields: {body: 'Edited body', instructions: 'Ring the bell'},
     delivery: {method: 'express'},
   });
+});
+
+it('doesn’t rule off the metadata when there’s no sidebar to show above it', async () => {
+  mountEditor(
+    editorProps({
+      metadataHtml: '<dl class="cp-metadata-list"><dt>ID</dt><dd>12</dd></dl>',
+    })
+  );
+
+  await vi.waitFor(() =>
+    expect(container.querySelector('.cp-metadata-list')).not.toBeNull()
+  );
+  expect(container.querySelector('hr')).toBeNull();
+});
+
+it('shows a legacy sidebar above the metadata, ruled off from it', async () => {
+  mountEditor(
+    editorProps({
+      metadataHtml: '<dl class="cp-metadata-list"><dt>ID</dt><dd>12</dd></dl>',
+      editorSidebarHtml:
+        '<div data-element-editor-form></div><p class="legacy-sidebar">Legacy</p>',
+    })
+  );
+
+  await vi.waitFor(() =>
+    expect(container.querySelector('.legacy-sidebar')).not.toBeNull()
+  );
+  expect(container.querySelector('hr')).not.toBeNull();
 });

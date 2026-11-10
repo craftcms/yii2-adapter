@@ -22,7 +22,8 @@ import {
   prefersReducedMotion,
   scrollContainerToElement,
 } from '@craftcms/garnish';
-import {createPasteButton, t, type CraftButton} from '@craftcms/ui';
+import {createPasteButton} from '@/modules/ui/legacy/buttons';
+import {t, type CraftButton} from '@craftcms/ui';
 import {MatrixEntry} from './matrix-entry';
 import {flashNewBlock} from '@/modules/matrix/new-block';
 import {containerMatrixInputs} from './support';
@@ -32,7 +33,7 @@ import {
   rememberCollapsedBlock,
   setCollapsedBlockIds,
 } from '@/modules/matrix/collapsed-blocks';
-import type {FormValues} from '@/modules/forms/types';
+import type {UiValues} from '@/modules/ui/types';
 import {
   type CopiedElementInfo,
   type LegacyElementEditor,
@@ -89,7 +90,7 @@ export class MatrixInput extends Base<MatrixInputSettings> {
   };
 
   // The legacy statics PHP-emitted flash JS still calls. The storage itself
-  // lives in ./collapsed-blocks, shared with the Form control.
+  // lives in ./collapsed-blocks, shared with the UI control.
   static getCollapsedEntryIds = collapsedBlockIds;
 
   static setCollapsedEntryIds = setCollapsedBlockIds;
@@ -169,7 +170,9 @@ export class MatrixInput extends Base<MatrixInputSettings> {
     }
 
     const entries = this.entryElements();
-    const collapsedEntries = MatrixInput.getCollapsedEntryIds();
+    const collapsedEntries = MatrixInput.getCollapsedEntryIds(
+      this.settings!.siteId
+    );
 
     // only initialise drag-sort if the device has mouse events
     if (craft().hasMousePointerEvents()) {
@@ -566,7 +569,7 @@ export class MatrixInput extends Base<MatrixInputSettings> {
     type: string,
     insertBefore?: HTMLElement | null,
     autofocus = true,
-    params: FormValues = {}
+    params: UiValues = {}
   ): Promise<void> {
     if (!this.canAddMoreEntries()) {
       this.updateStatusMessage();

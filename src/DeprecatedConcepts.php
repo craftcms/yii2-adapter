@@ -39,8 +39,10 @@ use craft\gql\mutations\Tag as TagMutation;
 use craft\gql\queries\Category as CategoryQuery;
 use craft\gql\queries\GlobalSet as GlobalSetQuery;
 use craft\gql\queries\Tag as TagQuery;
+use craft\gql\types\CategoryGroup as CategoryGroupType;
 use craft\gql\types\input\criteria\CategoryRelation;
 use craft\gql\types\input\criteria\TagRelation;
+use craft\gql\types\TagGroup as TagGroupType;
 use craft\models\CategoryGroup;
 use craft\models\TagGroup;
 use craft\services\Elements;
@@ -65,6 +67,7 @@ use CraftCms\Cms\GarbageCollection\Actions\DeleteOrphanedFieldLayouts;
 use CraftCms\Cms\GarbageCollection\Actions\DeletePartialElements;
 use CraftCms\Cms\GarbageCollection\Actions\HardDelete;
 use CraftCms\Cms\GarbageCollection\Events\RunningGarbageCollection;
+use CraftCms\Cms\Gql\Queries\Settings as SettingsQuery;
 use CraftCms\Cms\ProjectConfig\Events\ProjectConfigRebuilt;
 use CraftCms\Cms\ProjectConfig\ProjectConfig;
 use CraftCms\Cms\Site\Events\SiteSaved;
@@ -342,13 +345,15 @@ class DeprecatedConcepts
             Gql::EVENT_REGISTER_GQL_QUERIES,
             function(RegisterGqlQueriesEvent $event) {
                 if (DeprecatedConcepts::supportsCategories()) {
-                    array_push($event->queries, ...CategoryQuery::getQueries());
+                    $event->queries = array_merge($event->queries, CategoryQuery::getQueries());
+                    $event->queries = array_merge($event->queries, SettingsQuery::createQueries('categorygroups', 'categoryGroups', 'categoryGroup', CategoryGroupType::getType(), 'category groups', fn() => Craft::$app->getCategories()->getAllGroups()));
                 }
                 if (DeprecatedConcepts::supportsGlobalSets()) {
-                    array_push($event->queries, ...GlobalSetQuery::getQueries());
+                    $event->queries = array_merge($event->queries, GlobalSetQuery::getQueries());
                 }
                 if (DeprecatedConcepts::supportsTags()) {
-                    array_push($event->queries, ...TagQuery::getQueries());
+                    $event->queries = array_merge($event->queries, TagQuery::getQueries());
+                    $event->queries = array_merge($event->queries, SettingsQuery::createQueries('taggroups', 'tagGroups', 'tagGroup', TagGroupType::getType(), 'tag groups', fn() => Craft::$app->getTags()->getAllTagGroups()));
                 }
             },
         );
@@ -358,13 +363,13 @@ class DeprecatedConcepts
             Gql::EVENT_REGISTER_GQL_MUTATIONS,
             function(RegisterGqlMutationsEvent $event) {
                 if (DeprecatedConcepts::supportsCategories()) {
-                    array_push($event->mutations, ...CategoryMutation::getMutations());
+                    $event->mutations = array_merge($event->mutations, CategoryMutation::getMutations());
                 }
                 if (DeprecatedConcepts::supportsGlobalSets()) {
-                    array_push($event->mutations, ...GlobalSetMutation::getMutations());
+                    $event->mutations = array_merge($event->mutations, GlobalSetMutation::getMutations());
                 }
                 if (DeprecatedConcepts::supportsTags()) {
-                    array_push($event->mutations, ...TagMutation::getMutations());
+                    $event->mutations = array_merge($event->mutations, TagMutation::getMutations());
                 }
             },
         );
@@ -436,16 +441,36 @@ class DeprecatedConcepts
                 }
 
                 if (!empty($newItems)) {
-                    // Find the last item with a "content/" URL
-                    $lastContentKey = array_find_key($event->navItems, fn(array $item, int $key) => (
-                        str_starts_with($item['url'], 'content/') &&
-                        (!isset($event->navItems[$key + 1]) || !str_starts_with($event->navItems[$key + 1]['url'], 'content/'))
-                    ));
+                    // Insert after the last "content/" item, whether that's at the top level or within a group
+                    // (top-level items have a `url`; group members are passed through with an `href`)
+                    $insertAfterContent = function(array &$items) use ($newItems): bool {
+                        $isContentItem = fn(?array $item) => str_starts_with((string)($item['url'] ?? $item['href'] ?? ''), 'content/');
+                        $lastContentKey = array_find_key($items, fn(array $item, int $key) => (
+                            $isContentItem($item) && !$isContentItem($items[$key + 1] ?? null)
+                        ));
 
-                    if ($lastContentKey !== null) {
-                        array_splice($event->navItems, $lastContentKey + 1, 0, $newItems);
-                    } else {
-                        array_push($event->navItems, ...$newItems);
+                        if ($lastContentKey === null) {
+                            return false;
+                        }
+
+                        array_splice($items, $lastContentKey + 1, 0, $newItems);
+                        return true;
+                    };
+
+                    if (!$insertAfterContent($event->navItems)) {
+                        $inserted = false;
+
+                        foreach ($event->navItems as &$item) {
+                            if (!empty($item['group']) && is_array($item['subnav'] ?? null) && $insertAfterContent($item['subnav'])) {
+                                $inserted = true;
+                                break;
+                            }
+                        }
+                        unset($item);
+
+                        if (!$inserted) {
+                            array_push($event->navItems, ...$newItems);
+                        }
                     }
                 }
             },
@@ -583,6 +608,15 @@ class DeprecatedConcepts
         $categoryGroups = Craft::$app->getCategories()->getAllGroups();
 
         if (!empty($categoryGroups)) {
+            $queryComponents['settings.categorygroups:read'] = [
+                'label' => t('Query for category groups', category: 'yii2-adapter'),
+                'info' => t('Adds “{plural}” and “{singular}” queries, and a “{field}” field to categories.', [
+                    'plural' => 'categoryGroups',
+                    'singular' => 'categoryGroup',
+                    'field' => 'group',
+                ], 'yii2-adapter'),
+            ];
+
             foreach ($categoryGroups as $categoryGroup) {
                 $name = t($categoryGroup->name, category: 'site');
                 $prefix = "categorygroups.$categoryGroup->uid";
@@ -655,6 +689,15 @@ class DeprecatedConcepts
         $tagGroups = Craft::$app->getTags()->getAllTagGroups();
 
         if (!empty($tagGroups)) {
+            $queryComponents['settings.taggroups:read'] = [
+                'label' => t('Query for tag groups', category: 'yii2-adapter'),
+                'info' => t('Adds “{plural}” and “{singular}” queries, and a “{field}” field to tags.', [
+                    'plural' => 'tagGroups',
+                    'singular' => 'tagGroup',
+                    'field' => 'group',
+                ], 'yii2-adapter'),
+            ];
+
             foreach ($tagGroups as $tagGroup) {
                 $name = t($tagGroup->name, category: 'site');
                 $prefix = "taggroups.$tagGroup->uid";

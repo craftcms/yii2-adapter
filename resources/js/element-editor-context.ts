@@ -1,7 +1,7 @@
 import {provide, shallowRef, type InjectionKey} from 'vue';
 import type {InertiaForm} from '@inertiajs/vue3';
 import {expandPostArray} from '@/common/utils/forms';
-import type {FormValues} from '@/modules/forms/types';
+import type {UiValues} from '@/modules/ui/types';
 import type {
   ElementEditFormData,
   ElementEditPayload,
@@ -12,6 +12,7 @@ export type ElementEditor = ReturnType<typeof useElementEditor>;
 export interface LegacyEditorPayload extends ElementEditPayload {
   editorContentHtml?: string | null;
   editorSidebarHtml?: string | null;
+  editorAdditionalButtonsHtml?: string | null;
   editorAssets?: CraftCms.Cms.View.HtmlFragment;
 }
 interface LegacyFormData extends ElementEditFormData {
@@ -62,8 +63,8 @@ export const LegacyEditorContextKey: InjectionKey<
   ReturnType<typeof provideLegacyEditorContext>
 > = Symbol('LegacyEditorContext');
 
-export function legacyEditorRequestValues(data: object): FormValues {
-  const {legacyEditorValues, ...values} = data as FormValues;
+export function legacyEditorRequestValues(data: object): UiValues {
+  const {legacyEditorValues, ...values} = data as UiValues;
   for (const customValues of Object.values(legacyEditorValues ?? {})) {
     const inputs = Object.fromEntries(
       Object.entries(customValues as Record<string, string | string[]>).map(
@@ -78,7 +79,7 @@ export function legacyEditorRequestValues(data: object): FormValues {
   return values;
 }
 
-function mergeValues(values: FormValues, custom: FormValues): FormValues {
+function mergeValues(values: UiValues, custom: UiValues): UiValues {
   for (const [name, value] of Object.entries(custom)) {
     if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
       const current = values[name];
@@ -89,7 +90,7 @@ function mergeValues(values: FormValues, custom: FormValues): FormValues {
         !(current instanceof File)
           ? {...current}
           : {};
-      values[name] = mergeValues(nested, value as FormValues);
+      values[name] = mergeValues(nested, value as UiValues);
     } else {
       values[name] = value;
     }

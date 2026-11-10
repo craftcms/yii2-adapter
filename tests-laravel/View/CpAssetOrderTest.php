@@ -153,6 +153,32 @@ it('does not register the global axios outside the control panel', function() {
     expect($view->placeholderHtml()['bodyEndHtml'])->not->toContain('legacy/axios/dist/axios.js');
 });
 
+it('renders Craft.js before plugin bundles that depend on the CP asset outside the control panel', function() {
+    app(RegisterLegacyCompatAssets::class)->handle(Request::create('/'), fn() => null);
+
+    $view = Craft::$app->getView();
+    $view->registerAssetBundle(CpAssetDependentAssetBundle::class);
+
+    $html = $view->placeholderHtml()['bodyEndHtml'];
+
+    expect($html)->toContain('legacy/cpcompat/dist/craft.js')
+        ->and(strpos($html, 'legacy/cpcompat/dist/craft.js'))->toBeLessThan(strpos($html, 'https://example.test/assets/dependent.js'))
+        ->and($html)->toContain('legacy/jqueryui/dist/jquery-ui.js')
+        ->and($html)->not->toContain('legacy/cpcompat/dist/ui.js');
+});
+
+it('renders Craft.js once, before the frozen legacy CP scripts, in the control panel', function() {
+    app(RegisterLegacyCompatAssets::class)->handle(Request::create(cp_url('dashboard')), fn() => null);
+
+    $view = Craft::$app->getView();
+    $view->registerAssetBundle(CpAssetDependentAssetBundle::class);
+
+    $html = $view->placeholderHtml()['bodyEndHtml'];
+
+    expect(substr_count($html, 'legacy/cpcompat/dist/craft.js'))->toBe(1)
+        ->and(strpos($html, 'legacy/cpcompat/dist/craft.js'))->toBeLessThan(strpos($html, 'legacy/cpcompat/dist/ui.js'));
+});
+
 it('registers the XRegExp compatibility asset', function() {
     $view = Craft::$app->getView();
 
@@ -176,3 +202,15 @@ it('uses the current scoped HtmlStack after scoped instances are flushed', funct
         ->toContain('window.secondScopedStack = true;')
         ->not->toContain('window.firstScopedStack = true;');
 });
+
+it('writes the window.Craft config for the Craft 5 CP bundle only outside the control panel', function(bool $isCpRequest) {
+    // Control panel documents write the config from their own layout.
+    request()->attributes->set('isCpRequest', $isCpRequest);
+    $view = Craft::$app->getView();
+
+    $view->registerAssetBundle(\craft\web\assets\cp\CpAsset::class);
+
+    $html = $view->placeholderHtml()['headHtml'];
+
+    expect(str_contains($html, 'window.Craft = Object.assign(window.Craft || {}, {"'))->toBe(!$isCpRequest);
+})->with(['front end' => false, 'control panel' => true]);

@@ -8,15 +8,14 @@ use craft\fs\bridge\LegacyFsFlysystemAdapter;
 use craft\fs\Local;
 use CraftCms\Cms\Asset\Data\Volume;
 use CraftCms\Cms\Filesystem\Data\FsListing;
-use CraftCms\Cms\Form\Controls\Lightswitch;
-use CraftCms\Cms\Form\Controls\Text;
-use CraftCms\Cms\Form\FormContext;
-use CraftCms\Cms\Form\FormResolver;
 use CraftCms\Cms\ProjectConfig\ProjectConfig;
-use CraftCms\Cms\Support\Facades\Deprecator;
+use CraftCms\Cms\Ui\Controls\Lightswitch;
+use CraftCms\Cms\Ui\Controls\Text;
+use CraftCms\Cms\Ui\UiContext;
+use CraftCms\Cms\Ui\UiResolver;
 use CraftCms\Yii2Adapter\Filesystem\FilesystemCompatibility;
 use CraftCms\Yii2Adapter\Filesystem\LegacyFilesystems;
-use CraftCms\Yii2Adapter\Form\Controls\LegacyHtmlControl;
+use CraftCms\Yii2Adapter\Ui\Controls\LegacyHtmlControl;
 use Illuminate\Support\Facades\Storage;
 use League\Flysystem\UnableToListContents;
 
@@ -125,37 +124,14 @@ it('fails when legacy listings contain invalid values', function() {
         ->toThrow(UnableToListContents::class);
 });
 
-it('logs one actionable deprecation per concrete legacy filesystem class', function() {
-    $filesystem = new LegacyFilesystemCompatibilityTestFs([
-        'name' => 'Legacy Compatibility',
-        'handle' => 'legacy-compatibility',
-    ]);
-    $filesystem->register();
-    config()->set('filesystems.disks.legacy-compatibility-copy', [
-        'driver' => 'craft-fs-bridge',
-        'fsHandle' => 'legacy-compatibility',
-    ]);
-
-    Storage::disk('legacy-compatibility');
-    Storage::disk('legacy-compatibility-copy');
-
-    $logs = collect(Deprecator::getRequestLogs())
-        ->where('key', 'filesystem-bridge:' . LegacyFilesystemCompatibilityTestFs::class)
-        ->values();
-
-    expect($logs)->toHaveCount(1)
-        ->and($logs[0]->message)
-        ->toContain('getDiskConfig()');
-});
-
 it('combines base URL fields with legacy settings HTML', function() {
     $filesystem = new LegacyFilesystemCompatibilityTestFs([
         'hasUrls' => true,
         'url' => 'https://assets.example.test/root/',
     ]);
-    $context = new FormContext(namespace: 'settings');
+    $context = new UiContext(namespace: 'settings');
 
-    $payload = app(FormResolver::class)->resolve($filesystem->settingsForm($context), $context);
+    $payload = app(UiResolver::class)->resolve($filesystem->settingsUi($context), $context);
 
     expect(array_map(
         fn($node): string => implode('.', array_slice($node->control->path, 1)),
@@ -172,8 +148,8 @@ it('combines base URL fields with legacy settings HTML', function() {
 
 it('preserves legacy URL setting flags', function() {
     $filesystem = new LegacyFilesystemWithoutUrlSettingsTestFs();
-    $context = new FormContext(namespace: 'settings');
-    $payload = app(FormResolver::class)->resolve($filesystem->settingsForm($context), $context);
+    $context = new UiContext(namespace: 'settings');
+    $payload = app(UiResolver::class)->resolve($filesystem->settingsUi($context), $context);
 
     expect($filesystem->getShowHasUrlSetting())->toBeFalse()
         ->and($filesystem->getShowUrlSetting())->toBeFalse()
