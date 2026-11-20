@@ -11,6 +11,7 @@ use craft\events\RedirectEvent;
 use craft\web\ErrorHandler;
 use craft\web\RedirectRule;
 use craft\web\twig\variables\CraftVariable as LegacyCraftVariable;
+use CraftCms\Aliases\Aliases;
 use CraftCms\Cms\Asset\AssetFileKinds;
 use CraftCms\Cms\Asset\AssetTransformers;
 use CraftCms\Cms\Asset\Events\AssetUrlResolving;
@@ -18,6 +19,7 @@ use CraftCms\Cms\Asset\Events\VolumeConfigPreparing;
 use CraftCms\Cms\Asset\Exceptions\AssetTransformException;
 use CraftCms\Cms\Cms;
 use CraftCms\Cms\Condition\Conditions;
+use CraftCms\Cms\Console\TerminalCommands;
 use CraftCms\Cms\Cp\Html\MenuHtml;
 use CraftCms\Cms\Cp\Settings;
 use CraftCms\Cms\Database\LaravelMigrations;
@@ -38,11 +40,13 @@ use CraftCms\Cms\Http\Middleware\HandleTokenRequest;
 use CraftCms\Cms\Route\Events\Redirecting;
 use CraftCms\Cms\Shared\Exceptions\NotSupportedException;
 use CraftCms\Cms\Support\Env;
+use CraftCms\Cms\Support\File;
 use CraftCms\Cms\SystemMessage\SystemMessages;
 use CraftCms\Cms\Twig\Variables\CraftVariable;
 use CraftCms\Cms\Ui\UiControlTypes;
 use CraftCms\Cms\Ui\UiNodeTypes;
 use CraftCms\Cms\User\UserPermissions;
+use CraftCms\Cms\Utility\Utilities\ClearCaches;
 use CraftCms\Cms\Utility\UtilityTypes;
 use CraftCms\Cms\View\TemplateMode;
 use CraftCms\Cms\View\TemplateRoots;
@@ -76,6 +80,7 @@ use CraftCms\Yii2Adapter\Gql\LegacyGqlTypes;
 use CraftCms\Yii2Adapter\HtmlPurifier\LegacyHtmlPurifierConfigRegistrar;
 use CraftCms\Yii2Adapter\Http\CaptureOriginalActionRequestUri;
 use CraftCms\Yii2Adapter\Http\HandleYiiSiteRouteFallback;
+use CraftCms\Yii2Adapter\Http\LegacyAwarePreventRequestForgery;
 use CraftCms\Yii2Adapter\Http\LegacyMiddleware;
 use CraftCms\Yii2Adapter\Http\NormalizeLegacyPath;
 use CraftCms\Yii2Adapter\Http\PrepareLegacyCraftApp;
@@ -96,6 +101,7 @@ use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Contracts\Http\Kernel as HttpKernel;
 use Illuminate\Database\Migrations\MigrationRepositoryInterface;
 use Illuminate\Foundation\Exceptions\Handler;
+use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Queue\Events\JobAttempted;
 use Illuminate\Routing\Router;
 use Illuminate\Support\Facades\Artisan;
@@ -118,12 +124,15 @@ use yii\base\ExitException;
 use yii\web\HttpException as YiiHttpException;
 use yii\web\NotFoundHttpException as YiiNotFoundHttpException;
 
+use function CraftCms\Cms\t;
+
 class Yii2ServiceProvider extends ServiceProvider
 {
     #[Override]
     public function register(): void
     {
         $this->app->bind(CoreMigrator::class, Migrator::class);
+        $this->app->bind(PreventRequestForgery::class, LegacyAwarePreventRequestForgery::class);
         $this->app
             ->when(Migrator::class)
             ->needs(MigrationRepositoryInterface::class)
@@ -165,7 +174,10 @@ class Yii2ServiceProvider extends ServiceProvider
                     $event->asset,
                     $event->transform,
                 )->url;
-            } catch (AssetTransformException|NotSupportedException $exception) {
+            } catch (NotSupportedException) {
+                // Let the asset return its own URL.
+                return;
+            } catch (AssetTransformException $exception) {
                 report($exception);
             }
 
@@ -382,6 +394,7 @@ class Yii2ServiceProvider extends ServiceProvider
         new I18NCompatibility()->boot();
         new TestToEmailAddressCompatibility()->boot();
         $this->app->make(LegacyHtmlPurifierConfigRegistrar::class)->boot();
+        $this->registerHtmlPurifierCacheOption();
 
         /**
          * Load legacy Craft
@@ -447,6 +460,30 @@ class Yii2ServiceProvider extends ServiceProvider
         Craft::$app->state = YiiApplication::STATE_AFTER_REQUEST;
         Craft::$app->trigger(YiiApplication::EVENT_AFTER_REQUEST);
         Craft::$app->state = YiiApplication::STATE_END;
+    }
+
+    private function registerHtmlPurifierCacheOption(): void
+    {
+        ClearCaches::add('html-purifier', function() {
+            $path = Craft::$app->getPath()->getHtmlPurifierCachePath(false);
+
+            return [
+                'label' => t('HTML Purifier caches'),
+                'info' => t('Contents of {path}', [
+                    'path' => sprintf('`%s/`', File::relativePath($path, Aliases::get('@root'))),
+                ]),
+                'action' => function() use ($path) {
+                    // Keep the directory itself, which requests that are purifying may be using
+                    File::cleanDirectory($path);
+
+                    // Craft before 5.13, and yii\helpers\HtmlPurifier, cache them directly in storage/runtime/
+                    $runtimePath = Craft::$app->getPath()->getRuntimePath(false);
+                    foreach (['HTML', 'CSS', 'URI'] as $type) {
+                        File::deleteDirectory($runtimePath . DIRECTORY_SEPARATOR . $type);
+                    }
+                },
+            ];
+        });
     }
 
     private function registerCraftVariableCompatibility(): void
@@ -521,7 +558,7 @@ class Yii2ServiceProvider extends ServiceProvider
             }
 
             if (!Cms::config()->allowAdminChanges) {
-                throw new RuntimeException('The migration table has the wrong schema structure and allowAdminChanges is disabled. Run `php craft migrate:migration-table` to migrate the table to the new format.');
+                throw new RuntimeException('The migration table has the wrong schema structure and allowAdminChanges is disabled. Run `' . app(TerminalCommands::class)->craft('migrate:migration-table') . '` to migrate the table to the new format.');
             }
 
             Artisan::call('craft:migrate:migration-table', [
@@ -554,7 +591,7 @@ class Yii2ServiceProvider extends ServiceProvider
             }
 
             if (!Cms::config()->allowAdminChanges) {
-                throw new RuntimeException('The sessions table has the wrong schema structure and allowAdminChanges is disabled. Run `php craft migrate:sessions-table` to migrate the table to the new format.');
+                throw new RuntimeException('The sessions table has the wrong schema structure and allowAdminChanges is disabled. Run `' . app(TerminalCommands::class)->craft('migrate:sessions-table') . '` to migrate the table to the new format.');
             }
 
             Artisan::call('craft:migrate:sessions-table', [
